@@ -1,490 +1,562 @@
-from customtkinter import * 
-from tkinter import * 
+"""
+firststudent.py — صفحة درجات الصف الأول الإعدادي
+===================================================
+المواد: Civic Education / Arabic / English / Social Studies
+        Math / Chemistry / Physics / Biology
+التغييرات:
+  - Islamic Marks → Civic Education Marks
+  - إضافة student_id في كل جداول الدرجات
+  - الجدول بيعرض student_id كأول عمود
+"""
+
+from customtkinter import *
+from tkinter import *
+from tkinter import ttk, messagebox
 from PIL import Image
 from time import strftime
-from tkinter import ttk,messagebox
-import datetime
-from tkcalendar import *
 import sqlite3
 
+import dashboard
+from auth import session
+from create_db import log_action
 
-import studentspage
-import first_student_marks
+# ============================================================
+#  إعداد جداول الدرجات — اسم الجدول + اسم العرض
+# ============================================================
+SUBJECTS = [
+    ("civic_education_marks", "Civic Education"),
+    ("arabic_marks",          "Arabic"),
+    ("english_marks",         "English"),
+    ("social_marks",          "Social Studies"),
+    ("math_marks",            "Mathematics"),
+    ("chemistry_marks",       "Chemistry"),
+    ("physics_marks",         "Physics"),
+    ("biology_marks",         "Biology"),
+]
 
+# الأعمدة المشتركة في كل جداول الدرجات
+MARKS_COLS = [
+    "student_id", "student_name",
+    "st_month", "nd_month", "chapter1", "half_year",
+    "st_month1", "nd_month2", "chapter2", "chapter3",
+    "final_exam", "final_result"
+]
+
+TREE_HEADINGS = {
+    "student_id":   "ID",
+    "student_name": "Student Name",
+    "st_month":     "1st Month",
+    "nd_month":     "2nd Month",
+    "chapter1":     "Chapter 1",
+    "half_year":    "Half Year",
+    "st_month1":    "1st Month",
+    "nd_month2":    "2nd Month",
+    "chapter2":     "Chapter 2",
+    "chapter3":     "Chapter 3",
+    "final_exam":   "Final Exam",
+    "final_result": "Final Result",
+}
+
+TREE_WIDTHS = {
+    "student_id": 50, "student_name": 170,
+    "st_month": 75, "nd_month": 75, "chapter1": 75, "half_year": 80,
+    "st_month1": 75, "nd_month2": 75, "chapter2": 75, "chapter3": 75,
+    "final_exam": 80, "final_result": 100,
+}
+
+
+def _ensure_tables(con):
+    cur = con.cursor()
+    cur.execute("PRAGMA foreign_keys = ON")
+    # الخطوة 1: rename الأول قبل CREATE
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='islamic_marks'")
+    if cur.fetchone():
+        cur.execute("ALTER TABLE islamic_marks RENAME TO civic_education_marks")
+    # الخطوة 2: CREATE IF NOT EXISTS
+    for table, _ in SUBJECTS:
+        cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS {table}(
+                m_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER REFERENCES first_student(s_ID) ON DELETE CASCADE ON UPDATE CASCADE,
+                student_name TEXT, st_month REAL DEFAULT 0, nd_month REAL DEFAULT 0,
+                chapter1 REAL DEFAULT 0, half_year REAL DEFAULT 0,
+                st_month1 REAL DEFAULT 0, nd_month2 REAL DEFAULT 0,
+                chapter2 REAL DEFAULT 0, chapter3 REAL DEFAULT 0,
+                final_exam REAL DEFAULT 0, final_result TEXT DEFAULT 'Pending'
+            )""")
+        # الخطوة 3: أضف student_id لو ناقص
+        cur.execute(f"PRAGMA table_info({table})")
+        if "student_id" not in [r[1] for r in cur.fetchall()]:
+            cur.execute(f"ALTER TABLE {table} ADD COLUMN student_id INTEGER")
+    con.commit()
+
+
+# ============================================================
+#  MAIN CLASS
+# ============================================================
 class FirstStudentClass:
-    def __init__(self,root):
+    def __init__(self, root):
         self.root = root
-        self.root.geometry('1200x690+100+5')
-        self.root.title('First Students Page')
+        self.root.geometry('1300x700+80+20')
+        self.root.title('First Students Marks Page')
         self.root.config(bg='white')
-        self.root.resizable(False,False)
+        self.root.resizable(False, False)
 
-        def open_first_student_marks_page():
-            win = Toplevel()
-            first_student_marks.First_Student_Marks_Class(win)
-            root.withdraw()
-            win.deiconify()
+        # ==================== HEAD ====================
+        up_frame = CTkFrame(root, width=1299, height=70, bg_color='#F6F5F5',
+                            fg_color='#F6F5F5', border_color='#DA7297', border_width=2)
+        up_frame.place(x=1, y=1)
 
-        def date():
-            date_1 = strftime('%I:%M:%S %p \t %A \t %b/%d/%Y')
-            date_lbl.config(text=date_1)
-            date_lbl.after(1000,date)
+        Label(up_frame, text='Students Marks Page', font=('courier', 18, 'bold'),
+              bg='#F6F5F5', fg='#DA7297').place(x=150, y=5, width=300, height=60)
 
-        def rec_id():
-            con = sqlite3.connect('school.db')
-            cur = con.cursor()
-            cur.execute("""
-            WITH RECURSIVE cte AS (
-            SELECT ROW_NUMBER() OVER (ORDER BY s_ID) AS new_id, s_ID
-            FROM first_student
+        self._date_lbl = Label(up_frame, font=('courier', 14, 'bold'),
+                               bg='#F6F5F5', fg='#DA7297')
+        self._date_lbl.place(x=560, y=5, width=700, height=60)
+        self._tick()
 
-            )
-            UPDATE first_student
-            SET s_ID =(SELECT new_id FROM cte WHERE cte.s_ID = first_student.s_ID)
-            """)
-
-        def add():
-            con = sqlite3.connect('school.db')
-            cur = con.cursor()
-            if (var_name.get()=="" or var_gender.get()=="" or var_age.get()=="" or var_address.get()=="" or var_phone.get()=="" or var_date.get()=="" or var_lastschool.get()=="" or var_yearsfelid.get()=="" or var_healthproblem.get()=="" or var_finalresult.get()==""):
-                messagebox.showerror("error","enter all the data")
-            else:
-                cur.execute("INSERT INTO first_student(student_name,student_gender,student_age,address,contact, date,last_school,years_felid,health_problem,final_result) VALUES(?,?,?,?,?,?,?,?,?,?)",(
-                    var_name.get(),
-                    var_gender.get(),
-                    var_age.get(),
-                    var_address.get(),
-                    var_phone.get(),
-                    var_date.get(),
-                    var_lastschool.get(),
-                    var_yearsfelid.get(),
-                    var_healthproblem.get(),
-                    var_finalresult.get(),
-
-                )) 
-                messagebox.showinfo("success","add successfully")
-            con.commit()  
-            rec_id()
-            show()
-            clear()
-
-        def clear():
-            var_name.set("")
-            var_gender.set("")
-            var_age.set("")
-            var_address.set("")
-            var_phone.set("")
-            var_date.set("")
-            var_lastschool.set("")
-            var_yearsfelid.set("")
-            var_healthproblem.set("")
-            var_finalresult.set("")   
-
-            cmb_search.set("Select") 
-            var_search.set("")
-            
-            show()   
-
-        def show():
-            con = sqlite3.connect('school.db')   
-            cur = con.cursor()
-            try:
-                cur.execute("select * from first_student")
-                rows = cur.fetchall() 
-                student_tree.delete(*student_tree.get_children())
-                global count
-                count = 0  
-                for row in rows:
-                    if count % 2 == 0:
-                        student_tree.insert(parent='', index='end', iid=count, text='',values=(row[0],row[1],row[2],row[3],row[4],row[5],row[6],row[7],row[8],row[9],row[10]), tags=('evenrow',))
-                    else:
-                        student_tree.insert(parent='', index='end', iid=count, text='',values=(row[0],row[1],row[2],row[3],row[4],row[5],row[6],row[7],row[8],row[9],row[10]), tags=('oddrow',))
-                                  
-                    count +=1
-            except Exception as ex:
-                messagebox.showerror("error",f"error {str(ex)}")        
-
-        def get_data(ev):
-            f = student_tree.focus()
-            n = (student_tree.item(f))
-            row = n['values']
-
-            var_id.set(row[0])
-            var_name.set(row[1])
-            var_gender.set(row[2])
-            var_age.set(row[3])
-            var_address.set(row[4])
-            var_phone.set(row[5])
-            var_date.set(row[6])
-            var_lastschool.set(row[7])
-            var_yearsfelid.set(row[8])
-            var_healthproblem.set(row[9])
-            var_finalresult.set(row[10])
-
-        def update():
-            con = sqlite3.connect('school.db')
-            cur = con.cursor()
-            cur.execute("UPDATE first_student set student_name=?, student_gender=?, student_age=?,address=?,contact=?,date=?,last_school=?,years_felid=?,health_problem=?,final_result=? where s_ID=?",(
-                        var_name.get(),
-                        var_gender.get(),
-                        var_age.get(),
-                        var_address.get(),
-                        var_phone.get(),
-                        var_date.get(),
-                        var_lastschool.get(),
-                        var_yearsfelid.get(),
-                        var_healthproblem.get(),
-                        var_finalresult.get(),
-                        var_id.get(),
-
-            ))
-            con.commit()
-            rec_id()
-            messagebox.showinfo("success","update successfully")
-            show()
-            clear()
-
-        def delete():
-            con = sqlite3.connect('school.db')
-            cur = con.cursor()
-            op = messagebox.askyesno("confirm","do you want to delete")
-            op==True
-            cur.execute("delete from first_student where s_ID=?",(var_id.get(),))
-            con.commit()
-            rec_id()
-            messagebox.showinfo("success","delete successfully")
-            show()
-            clear()
-
-        def search():
-            con = sqlite3.connect('school.db')
-            cur = con.cursor()
-            try:
-                if cmb_search.get()=="Select":
-                    messagebox.showerror("error","Select search by option")
-                else:
-                    cur.execute("select * from first_student where "+cmb_search.get()+" LIKE '%"+var_search.get()+"%'")
-                    rows=cur.fetchall()  
-                    if len(rows)!=0:
-                        student_tree.delete(*student_tree.get_children())
-                        for row in rows:
-                            student_tree.insert('',END,values=row)  
-                    else:
-                        messagebox.showerror("error","no record found")
-            except Exception as ex:
-                messagebox.showerror("error",f"error {str(ex)}")                     
-        #============================== head frame ==========================
-        up_frame = CTkFrame(root,width=1199,height=70,bg_color='#F6F5F5',fg_color='#F6F5F5',border_color='#DA7297',border_width=2)
-        up_frame.place(x=1,y=1)
-
-        text_lbl = Label(up_frame, text='Students Page',font=('corier',18,'bold'),bg='#F6F5F5',fg='#DA7297')
-        text_lbl.place(x=150,y=5,width=200,height=60)
-
-        date_lbl = Label(up_frame,font=('corier',18,'bold'),bg='#F6F5F5',fg='#DA7297')
-        date_lbl.place(x=590,y=5,width=570,height=60)
-        date()
-
-        #=================== back button ================
         def back():
+            import studentspage
             win = Toplevel()
             studentspage.StudentsClass(win)
             root.withdraw()
             win.deiconify()
-        
 
-        back_btn = CTkButton(up_frame,text='←', width=100,height=68,
-                             fg_color='#DA7297',text_color='white',bg_color='#F6F5F5',
-                             font=('arial',30,'bold'),hover_color='#DA7297',border_color='#DA7297',
-                             corner_radius=0,command=back)
-        back_btn.place(x=2,y=2)
+        CTkButton(up_frame, text='←', width=100, height=68, fg_color='#DA7297',
+                  text_color='white', bg_color='#F6F5F5', font=('arial', 30, 'bold'),
+                  hover_color='#DA7297', corner_radius=0, command=back).place(x=2, y=2)
 
-        #============================= up frame ==========================
-        head_frame = CTkFrame(root,width=1197,height=615,bg_color='white',fg_color='#F6F5F5',border_color='#DA7297',border_width=2)
-        head_frame.place(x=1,y=72)
+        # ==================== SUBJECT BUTTONS ====================
+        btn_frame = CTkFrame(root, width=1299, height=55, fg_color='#DA7297',
+                             bg_color='white')
+        btn_frame.place(x=1, y=72)
 
-        #============================= search area========================
-        var_search=StringVar()
+        self._active_table = None
+        self._subject_btns = {}
 
-        frame_search = CTkFrame(head_frame,width=880,height=60,bg_color='#F6F5F5',
-                                fg_color='white',border_width=2,border_color='#DA7297')
-        frame_search.place(x=30,y=10)
+        for i, (table, label) in enumerate(SUBJECTS):
+            btn = CTkButton(
+                btn_frame,
+                text=label.replace(" ", "\n") if len(label) > 10 else label,
+                width=148, height=53,
+                fg_color='#DA7297', text_color='white', bg_color='#DA7297',
+                font=('arial', 11, 'bold'), hover_color='#8B0000',
+                corner_radius=0,
+                command=lambda t=table, lbl=label: self._open_marks(t, lbl)
+            )
+            btn.place(x=i * 150, y=1)
+            self._subject_btns[table] = btn
 
-        lbl_text = Label(frame_search,text='Search Student',font=('arial',16,'bold'),
-                         bg='white',fg='#DA7297')
-        lbl_text.place(x=5,y=5,width=180,height=50)
+        # ==================== CONTENT AREA ====================
+        self._content = CTkFrame(root, width=1297, height=570, fg_color='#F6F5F5',
+                                 bg_color='white', border_color='#DA7297', border_width=2)
+        self._content.place(x=1, y=128)
 
-        cmb_search = CTkComboBox(frame_search,values=("Select","student_name","contact"),
-                                 button_hover_color='#DA7297',justify=CENTER,
-                                 font=('arial',15),width=180,height=35,fg_color='white',
-                                 border_width=1,border_color='#DA7297',button_color='#DA7297',
-                                 dropdown_fg_color='white',dropdown_text_color='#DA7297')
-        cmb_search.place(x=180,y=13)
+        # فتح أول مادة تلقائياً
+        con = sqlite3.connect('school.db')
+        _ensure_tables(con)
+        con.close()
+        self._open_marks(*SUBJECTS[0])
 
-        search_en = CTkEntry(frame_search,textvariable=var_search,width=250,height=35,fg_color='white',justify='center',
-                             border_color='#DA7297',bg_color='white',border_width=1,
-                             font=('arial',14))
-        search_en.place(x=380,y=13)
+    def _tick(self):
+        self._date_lbl.config(text=strftime('%I:%M:%S %p      %A      %b/%d/%Y'))
+        self.root.after(1000, self._tick)
 
-        search_btn = CTkButton(frame_search,text='SEARCH',width=200,height=40,
-                               fg_color='#DA7297',text_color='white',bg_color='white',
-                               font=('arial',16,'bold'), hover_color='#DA7297',
-                               corner_radius=10,command=search)
-        search_btn.place(x=650,y=10)
+    # ============================================================
+    #  OPEN MARKS PAGE FOR SUBJECT
+    # ============================================================
+    def _open_marks(self, table, subject_label):
+        # تغيير لون الزرار النشط
+        for t, btn in self._subject_btns.items():
+            btn.configure(fg_color='#8B0000' if t == table else '#DA7297',
+                          hover_color='#8B0000')
 
-        #============================= student tree ============================
-        
+        # مسح المحتوى القديم
+        for w in self._content.winfo_children():
+            w.destroy()
 
-        student_frame = Frame(head_frame,bg='gray')
-        student_frame.place(x=3,y=90,width=1188,height=447)
-
-        student_tree = ttk.Style()
-        student_tree.theme_use('clam')
-
-        student_tree.configure('Treeview',bg='#D3D3D3',font=('arial',12),fg='black',
-                               rowheight=30,fieldbackground='white')
-        student_tree.configure('Treeview.Heading',background='#DA7297',foreground='white',
-                               font=('arial',12,'bold'),height=100)
-        
-        student_tree_scroll_y = Scrollbar(student_frame)
-        student_tree_scroll_y.pack(side=RIGHT,fill=Y)
-
-        student_tree_scroll_x = Scrollbar(student_frame,orient=HORIZONTAL)
-        student_tree_scroll_x.pack(side=BOTTOM,fill=X)
-
-        student_tree = ttk.Treeview(student_frame,yscrollcommand=student_tree_scroll_y.set,xscrollcommand=student_tree_scroll_x.set)
-        student_tree.place(x=0,y=0,width=1171,height=430)
-
-        student_tree_scroll_y.config(command=student_tree.yview)
-        student_tree_scroll_x.config(command=student_tree.xview)
-
-        student_tree.configure(columns=("s_ID","student_name","student_gender","student_age",
-                                        "address","contact","date","last_school","years_feild",
-                                        "health_problem","finall_result"))
-        
-        student_tree.heading("s_ID", text="ID")
-        student_tree.heading("student_name", text="Student name")
-        student_tree.heading("student_gender", text="Student gender")
-        student_tree.heading("student_age", text="Student age")
-        student_tree.heading("address", text="Address")
-        student_tree.heading("contact", text="Phone number")
-        student_tree.heading("date", text="Date")
-        student_tree.heading("last_school", text="Last school")
-        student_tree.heading("years_feild", text="Years feild")
-        student_tree.heading("health_problem", text="Health problem")
-        student_tree.heading("finall_result", text="Finall result")
-
-        student_tree["show"] = "headings"
-
-        student_tree.column("s_ID", width=50,anchor=W)
-        student_tree.column("student_name", width=180,anchor=W)
-        student_tree.column("student_gender", width=150,anchor=W)
-        student_tree.column("student_age", width=150,anchor=W)
-        student_tree.column("address", width=100,anchor=W)
-        student_tree.column("contact", width=150,anchor=W)
-        student_tree.column("date", width=110,anchor=W)
-        student_tree.column("last_school", width=180,anchor=W)
-        student_tree.column("years_feild", width=130,anchor=W)
-        student_tree.column("health_problem", width=180,anchor=W)
-        student_tree.column("finall_result", width=100,anchor=W)
-        student_tree.bind("<ButtonRelease-1>",get_data)
-        show()
-
-        student_tree.tag_configure('oddrow', background='lightgray')
-        student_tree.tag_configure('evenrow', background='#F6F5F5')
-
-        #=================== varibale =============================
-        var_id = StringVar()
-        var_name =StringVar()
-        var_gender = StringVar()
-        var_age = StringVar()
-        var_gender = StringVar()
-        var_address = StringVar()
-        var_phone = StringVar()
-        var_date = StringVar()
-        var_lastschool = StringVar()
-        var_yearsfelid = StringVar()
-        var_healthproblem = StringVar()
-        var_finalresult = StringVar()
-
-        #======================= entry window ======================
-        #datenow = datetime.datetime.now()
-        #date = datenow.strftime('%Y-%m-%d')
-          
-        def window_entry():
-            win = Toplevel(root)
-            win.geometry('1185x450+106+190')
-            win.title('Add Information Students')
-            win.resizable(False,False)
-            win.config(bg='white')
-            win.transient(root)
-            #win.grab_set()
-            win.focus_set()
-            win.lift()
-
-            win_en_frame = CTkFrame(win,width=1185,height=449,bg_color='#F6F5F5',fg_color='#F6F5F5',border_width=2,border_color='#DA7297')
-            win_en_frame.place(x=1,y=1)
-
-            def win_cal(event):
-                global cal , date_win
-
-                date_win = Toplevel()
-                date_win.grab_set()
-                date_win.geometry('250x220+200+400')
-                date_win.title('choose date of brith')
-                date_win.resizable(False,False)
-
-                cal = Calendar(date_win,selectmode="day",date_pattern="mm/dd/yy")
-                cal.place(x=0,y=0)
-
-                submit_btn = Button(date_win, text='add date', bg='#DA7297',fg='white',command=date_b)
-                submit_btn.place(x=80,y=190)
-
-            def date_b():
-                en_sage.delete(0,END)
-                en_sage.insert(0, cal.get_date())
-                date_win.destroy()
-
-            #================== labels + entrys ============================
-            
-            lbl_title = CTkLabel(win_en_frame,text='Enter Students Informations',width=1120,height=60,
-                                 text_color='#DA7297',font=('arial',20,'bold'),fg_color='#F6F5F5',bg_color='#F6F5F5')
-            lbl_title.place(x=20,y=5)
+        self._active_table = table
+        _MarksPanel(self._content, table, subject_label)
 
 
-            lbl_sname = CTkLabel(win_en_frame,text='Student Name',width=50,height=25,
-                                 text_color='#DA7297',font=('arial',16,'bold'),fg_color='#F6F5F5',bg_color='#F6F5F5')
-            lbl_sname.place(x=30,y=75)
+# ============================================================
+#  MARKS PANEL — CRUD لكل مادة
+# ============================================================
+class _MarksPanel:
+    def __init__(self, parent, table, subject_label):
+        self.parent  = parent
+        self.table   = table
+        self.subject = subject_label
 
-            en_sname = CTkEntry(win_en_frame,textvariable=var_name,width=300,height=35,justify='center',fg_color='white',
-                                font=('arial',14),border_width=1,border_color='#DA7297',bg_color='#F6F5F5')
-            
-            en_sname.place(x=30,y=100)
+        # variables
+        self.var_id      = StringVar()
+        self.var_sid     = StringVar()   # student_id
+        self.var_name    = StringVar()
+        self.var_st      = StringVar()
+        self.var_nd      = StringVar()
+        self.var_ch1     = StringVar()
+        self.var_half    = StringVar()
+        self.var_st1     = StringVar()
+        self.var_nd2     = StringVar()
+        self.var_ch2     = StringVar()
+        self.var_ch3     = StringVar()
+        self.var_exam    = StringVar()
+        self.var_result  = StringVar()
+        self.var_search  = StringVar()
 
-            lbl_sgender = CTkLabel(win_en_frame,text='Student Gender',width=50,height=25,
-                                 text_color='#DA7297',font=('arial',16,'bold'),fg_color='#F6F5F5',bg_color='#F6F5F5')
-            lbl_sgender.place(x=30,y=175)
+        self._build()
+        self._show()
 
-            cob_gender = CTkComboBox(win_en_frame,variable=var_gender,values=("Select","Male","Female"),
-                                     button_hover_color='#DA7297',justify=CENTER,width=300,height=35,
-                                     fg_color='white',border_width=1,border_color='#DA7297',button_color='#DA7297',
-                                     font=('arial',15),dropdown_fg_color='white',dropdown_text_color='#DA7297')
-            cob_gender.place(x=30,y=200)
+    # ---- DB ----
+    def _con(self):
+        con = sqlite3.connect('school.db')
+        con.execute("PRAGMA foreign_keys = ON")
+        return con
 
-            lbl_sage = CTkLabel(win_en_frame,text='Student Age',width=50,height=25,
-                                 text_color='#DA7297',font=('arial',16,'bold'),fg_color='#F6F5F5',bg_color='#F6F5F5')
-            lbl_sage.place(x=30,y=275)
+    def _get_students(self):
+        """قائمة الطلاب للـ ComboBox"""
+        con = self._con(); cur = con.cursor()
+        cur.execute("SELECT s_ID, student_name FROM first_student WHERE is_active=1 ORDER BY student_name")
+        rows = cur.fetchall(); con.close()
+        return rows  # [(id, name), ...]
 
-            en_sage = CTkEntry(win_en_frame,textvariable=var_age,width=300,height=35,justify='center',fg_color='white',
-                                font=('arial',14),border_width=1,border_color='#DA7297',bg_color='#F6F5F5')
-            
-            en_sage.place(x=30,y=300)
-            #en_sage.insert(0,"dd/mm/y")
-            en_sage.bind("<1>",win_cal)
-            
+    # ---- BUILD UI ----
+    def _build(self):
+        p = self.parent
 
-            lbl_address = CTkLabel(win_en_frame,text='Address',width=50,height=25,
-                                 text_color='#DA7297',font=('arial',16,'bold'),fg_color='#F6F5F5',bg_color='#F6F5F5')
-            lbl_address.place(x=30,y=375)
+        # --- صورة ---
+        try:
+            img = CTkImage(Image.open('images/marks.png'), size=(180, 180))
+            CTkLabel(p, text='', image=img, fg_color='#F6F5F5').place(x=10, y=10)
+        except Exception:
+            pass
 
-            en_address = CTkEntry(win_en_frame,textvariable=var_address,width=300,height=35,justify='center',fg_color='white',
-                                font=('arial',14),border_width=1,border_color='#DA7297',bg_color='#F6F5F5')
-            
-            en_address.place(x=30,y=400)
+        # --- Search ---
+        search_frame = CTkFrame(p, width=800, height=50, fg_color='white',
+                                bg_color='#F6F5F5', border_color='#DA7297', border_width=1)
+        search_frame.place(x=200, y=10)
+
+        Label(search_frame, text='Search Student', font=('arial', 13, 'bold'),
+              bg='white', fg='#DA7297').place(x=10, y=10)
+
+        self.cmb_search = CTkComboBox(
+            search_frame,
+            values=["student_id", "student_name", "final_result"],
+            button_color='#DA7297', button_hover_color='#DA7297',
+            justify=CENTER, font=('arial', 13), width=160, height=35,
+            fg_color='white', border_color='#DA7297',
+            dropdown_fg_color='white', dropdown_text_color='#DA7297')
+        self.cmb_search.set("Select")
+        self.cmb_search.place(x=180, y=8)
+
+        CTkEntry(search_frame, textvariable=self.var_search,
+                 width=200, height=35, fg_color='white',
+                 border_color='#DA7297', justify='center').place(x=360, y=8)
+
+        CTkButton(search_frame, text='SEARCH', width=160, height=38,
+                  fg_color='#DA7297', text_color='white', font=('arial', 13, 'bold'),
+                  corner_radius=8, command=self._search).place(x=580, y=6)
+
+        # --- Student picker ---
+        Label(p, text='Student Name', font=('arial', 12, 'bold'),
+              bg='#F6F5F5', fg='gray').place(x=200, y=75)
+
+        students = self._get_students()
+        stu_names = [f"{sid} — {name}" for sid, name in students]
+        self._stu_map = {f"{sid} — {name}": (sid, name) for sid, name in students}
+
+        self.cmb_student = CTkComboBox(
+            p, values=stu_names if stu_names else ["— لا يوجد طلاب —"],
+            width=320, height=35, font=('arial', 12),
+            button_color='#DA7297', button_hover_color='#DA7297',
+            fg_color='white', border_color='#DA7297',
+            dropdown_fg_color='white', dropdown_text_color='#DA7297',
+            command=self._on_student_select)
+        self.cmb_student.set("اختار الطالب")
+        self.cmb_student.place(x=340, y=73)
+
+        CTkLabel(p, text='student_id:', text_color='gray',
+                 font=('arial', 11), fg_color='#F6F5F5',
+                 bg_color='#F6F5F5').place(x=680, y=75)
+        CTkEntry(p, textvariable=self.var_sid, width=70, height=35,
+                 font=('arial', 12), border_color='#DA7297',
+                 state='readonly', justify='center').place(x=760, y=73)
+
+        # --- Grade fields ---
+        fields = [
+            ("1st Month",   self.var_st,   200, 125),
+            ("2nd Month",   self.var_nd,   340, 125),
+            ("Chapter 1",   self.var_ch1,  480, 125),
+            ("Half Year",   self.var_half, 620, 125),
+            ("1st Month",   self.var_st1,  760, 125),
+            ("2nd Month",   self.var_nd2,  900, 125),
+            ("Chapter 2",   self.var_ch2,  200, 185),
+            ("Chapter 3",   self.var_ch3,  340, 185),
+            ("Final Exam",  self.var_exam, 480, 185),
+            ("Final Result",self.var_result,620, 185),
+        ]
+        for lbl_t, var, x, y in fields:
+            Label(p, text=lbl_t, font=('arial', 11, 'bold'),
+                  bg='#F6F5F5', fg='gray').place(x=x, y=y)
+            w = 120 if lbl_t == "Final Result" else 80
+            CTkEntry(p, textvariable=var, width=w, height=30,
+                     font=('arial', 11), border_color='#DA7297',
+                     justify='center').place(x=x, y=y + 22)
+
+        # --- Buttons ---
+        btn_y = 255
+        ALLOWED_SEARCH_COLS = {"student_id", "student_name", "final_result"}
+        for text, cmd, x, perm in [
+            ("ADD",    self._add,    200, "add_marks"),
+            ("UPDATE", self._update, 330, "update_marks"),
+            ("DELETE", self._delete, 460, "delete_marks"),
+            ("CLEAR",  self._clear,  590, None),
+        ]:
+            state = 'normal' if (perm is None or session.can(perm)) else 'disabled'
+            CTkButton(p, text=text, width=120, height=38,
+                      fg_color='#DA7297' if state == 'normal' else '#aaaaaa',
+                      text_color='white', font=('arial', 13, 'bold'),
+                      corner_radius=8, state=state,
+                      command=cmd).place(x=x, y=btn_y)
+
+        if session.role == 'viewer':
+            Label(p, text="🔒 وضع عرض فقط", bg='#F6F5F5', fg='#888',
+                  font=('arial', 10, 'italic')).place(x=730, y=265)
+
+        # --- TreeView ---
+        tree_frame = Frame(p, bg='gray')
+        tree_frame.place(x=5, y=305, width=1285, height=255)
+
+        style = ttk.Style(); style.theme_use('clam')
+        style.configure('Treeview', font=('arial', 11), rowheight=28,
+                        fieldbackground='white')
+        style.configure('Treeview.Heading', background='#DA7297',
+                        foreground='white', font=('arial', 11, 'bold'))
+
+        scx = Scrollbar(tree_frame, orient=HORIZONTAL)
+        scy = Scrollbar(tree_frame, orient=VERTICAL)
+        scx.pack(side=BOTTOM, fill=X)
+        scy.pack(side=RIGHT, fill=Y)
+
+        self.tree = ttk.Treeview(
+            tree_frame,
+            columns=MARKS_COLS,
+            show='headings',
+            yscrollcommand=scy.set,
+            xscrollcommand=scx.set
+        )
+        scy.config(command=self.tree.yview)
+        scx.config(command=self.tree.xview)
+
+        for col in MARKS_COLS:
+            self.tree.heading(col, text=TREE_HEADINGS[col], anchor='center')
+            self.tree.column(col, width=TREE_WIDTHS[col], anchor='center')
+
+        self.tree.tag_configure('evenrow', background='#F6F5F5')
+        self.tree.tag_configure('oddrow',  background='lightgray')
+        self.tree.pack(fill=BOTH, expand=1)
+        self.tree.bind('<ButtonRelease-1>', self._get_data)
+
+    # ---- Student select ----
+    def _on_student_select(self, choice):
+        info = self._stu_map.get(choice)
+        if info:
+            sid, name = info
+            self.var_sid.set(str(sid))
+            self.var_name.set(name)
+
+    # ---- Show all ----
+    def _show(self):
+        con = self._con(); cur = con.cursor()
+        try:
+            cur.execute(f"""
+                SELECT student_id, student_name,
+                       st_month, nd_month, chapter1, half_year,
+                       st_month1, nd_month2, chapter2, chapter3,
+                       final_exam, final_result
+                FROM {self.table}
+                ORDER BY student_id
+            """)
+            rows = cur.fetchall()
+            self.tree.delete(*self.tree.get_children())
+            for i, row in enumerate(rows):
+                tag = 'evenrow' if i % 2 == 0 else 'oddrow'
+                self.tree.insert('', END, values=row, tags=(tag,))
+        except Exception as ex:
+            messagebox.showerror("خطأ", str(ex))
+        finally:
+            con.close()
+
+    # ---- Get data on click ----
+    def _get_data(self, ev):
+        item = self.tree.focus()
+        row  = self.tree.item(item)['values']
+        if not row: return
+        # row = (student_id, student_name, st_month, nd_month, chapter1, half_year,
+        #         st_month1, nd_month2, chapter2, chapter3, final_exam, final_result)
+        sid  = row[0]
+        name = row[1]
+        self.var_sid.set(str(sid))
+        self.var_name.set(str(name))
+        self.var_st.set(str(row[2]));   self.var_nd.set(str(row[3]))
+        self.var_ch1.set(str(row[4]));  self.var_half.set(str(row[5]))
+        self.var_st1.set(str(row[6]));  self.var_nd2.set(str(row[7]))
+        self.var_ch2.set(str(row[8]));  self.var_ch3.set(str(row[9]))
+        self.var_exam.set(str(row[10])); self.var_result.set(str(row[11]))
+
+        # اختار الطالب في الـ ComboBox
+        key = f"{sid} — {name}"
+        if key in self._stu_map:
+            self.cmb_student.set(key)
+
+    # ---- Validate grades ----
+    def _get_grade_vals(self):
+        """يرجع dict بقيم الدرجات أو يرفع ValueError"""
+        def num(v, label):
+            try: return float(v.get())
+            except ValueError: raise ValueError(f"'{label}' لازم يكون رقم.")
+
+        return {
+            "student_id":   self.var_sid.get(),
+            "student_name": self.var_name.get(),
+            "st_month":     num(self.var_st,   "1st Month"),
+            "nd_month":     num(self.var_nd,   "2nd Month"),
+            "chapter1":     num(self.var_ch1,  "Chapter 1"),
+            "half_year":    num(self.var_half, "Half Year"),
+            "st_month1":    num(self.var_st1,  "1st Month (2)"),
+            "nd_month2":    num(self.var_nd2,  "2nd Month (2)"),
+            "chapter2":     num(self.var_ch2,  "Chapter 2"),
+            "chapter3":     num(self.var_ch3,  "Chapter 3"),
+            "final_exam":   num(self.var_exam, "Final Exam"),
+            "final_result": self.var_result.get() or "Pending",
+        }
+
+    # ---- ADD ----
+    def _add(self):
+        if not session.require("add_marks"): return
+        sid = self.var_sid.get()
+        if not sid:
+            messagebox.showerror("خطأ", "اختار الطالب أولاً."); return
+        try:
+            g = self._get_grade_vals()
+        except ValueError as ex:
+            messagebox.showerror("خطأ", str(ex)); return
+
+        try:
+            con = self._con(); cur = con.cursor()
+            cur.execute(f"""
+                INSERT INTO {self.table}
+                (student_id, student_name, st_month, nd_month, chapter1, half_year,
+                 st_month1, nd_month2, chapter2, chapter3, final_exam, final_result)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (g['student_id'], g['student_name'],
+                  g['st_month'],   g['nd_month'],   g['chapter1'], g['half_year'],
+                  g['st_month1'],  g['nd_month2'],  g['chapter2'], g['chapter3'],
+                  g['final_exam'], g['final_result']))
+            new_id = cur.lastrowid
+            con.commit(); con.close()
+            log_action(session.admin_username, "ADD_MARKS", self.table,
+                       new_id, f"student:{g['student_name']} subject:{self.subject}")
+            self._show(); self._clear()
+            messagebox.showinfo("تم", "تمت إضافة الدرجات.")
+        except Exception as ex:
+            messagebox.showerror("خطأ", str(ex))
+
+    # ---- UPDATE (بـ student_id) ----
+    def _update(self):
+        if not session.require("update_marks"): return
+        sid = self.var_sid.get()
+        if not sid:
+            messagebox.showerror("خطأ", "اختار طالب من الجدول أولاً."); return
+        try:
+            g = self._get_grade_vals()
+        except ValueError as ex:
+            messagebox.showerror("خطأ", str(ex)); return
+
+        try:
+            con = self._con(); cur = con.cursor()
+            cur.execute(f"""
+                UPDATE {self.table}
+                SET student_name=?, st_month=?, nd_month=?, chapter1=?, half_year=?,
+                    st_month1=?, nd_month2=?, chapter2=?, chapter3=?,
+                    final_exam=?, final_result=?
+                WHERE student_id=?
+            """, (g['student_name'], g['st_month'],  g['nd_month'],  g['chapter1'],
+                  g['half_year'],    g['st_month1'], g['nd_month2'], g['chapter2'],
+                  g['chapter3'],     g['final_exam'],g['final_result'],
+                  sid))
+            if cur.rowcount == 0:
+                messagebox.showwarning("تنبيه", "الطالب ده مش عنده درجات — اضغط ADD.")
+            else:
+                con.commit()
+                log_action(session.admin_username, "UPDATE_MARKS", self.table,
+                           None, f"student_id:{sid} subject:{self.subject}")
+                messagebox.showinfo("تم", "تم تعديل الدرجات.")
+            con.close()
+            self._show(); self._clear()
+        except Exception as ex:
+            messagebox.showerror("خطأ", str(ex))
+
+    # ---- DELETE ----
+    def _delete(self):
+        if not session.require("delete_marks"): return
+        sid = self.var_sid.get()
+        if not sid:
+            messagebox.showerror("خطأ", "اختار طالب من الجدول."); return
+        if not messagebox.askyesno("تأكيد",
+                f"هتحذف درجات {self.var_name.get()} في {self.subject}؟"):
+            return
+        try:
+            con = self._con(); cur = con.cursor()
+            cur.execute(f"DELETE FROM {self.table} WHERE student_id=?", (sid,))
+            con.commit(); con.close()
+            log_action(session.admin_username, "DELETE_MARKS", self.table,
+                       None, f"student_id:{sid}")
+            self._show(); self._clear()
+            messagebox.showinfo("تم", "تم الحذف.")
+        except Exception as ex:
+            messagebox.showerror("خطأ", str(ex))
+
+    # ---- CLEAR ----
+    def _clear(self):
+        for v in (self.var_id, self.var_sid, self.var_name,
+                  self.var_st, self.var_nd, self.var_ch1, self.var_half,
+                  self.var_st1, self.var_nd2, self.var_ch2, self.var_ch3,
+                  self.var_exam, self.var_result, self.var_search):
+            v.set("")
+        self.cmb_student.set("اختار الطالب")
+        self.cmb_search.set("Select")
+
+    # ---- SEARCH ----
+    def _search(self):
+        col = self.cmb_search.get()
+        val = self.var_search.get().strip()
+        ALLOWED = {"student_id", "student_name", "final_result"}
+        if col not in ALLOWED:
+            messagebox.showerror("خطأ", "اختار عمود بحث صحيح."); return
+        if not val:
+            messagebox.showerror("خطأ", "أدخل قيمة البحث."); return
+        try:
+            con = self._con(); cur = con.cursor()
+            cur.execute(f"""
+                SELECT student_id, student_name,
+                       st_month, nd_month, chapter1, half_year,
+                       st_month1, nd_month2, chapter2, chapter3,
+                       final_exam, final_result
+                FROM {self.table} WHERE {col} LIKE ?
+            """, (f'%{val}%',))
+            rows = cur.fetchall()
+            self.tree.delete(*self.tree.get_children())
+            for row in rows:
+                self.tree.insert('', END, values=row)
+            con.close()
+            if not rows:
+                messagebox.showinfo("بحث", "لا توجد نتائج.")
+        except Exception as ex:
+            messagebox.showerror("خطأ", str(ex))
 
 
-            lbl_phone = CTkLabel(win_en_frame,text='Phone number',width=50,height=25,
-                                 text_color='#DA7297',font=('arial',16,'bold'),fg_color='#F6F5F5',bg_color='#F6F5F5')
-            lbl_phone.place(x=400,y=75)
-
-            en_phone = CTkEntry(win_en_frame,textvariable=var_phone,width=300,height=35,justify='center',fg_color='white',
-                                font=('arial',14),border_width=1,border_color='#DA7297',bg_color='#F6F5F5')
-            
-            en_phone.place(x=400,y=100)
-
-            lbl_date = CTkLabel(win_en_frame,text='Date',width=50,height=25,
-                                 text_color='#DA7297',font=('arial',16,'bold'),fg_color='#F6F5F5',bg_color='#F6F5F5')
-            lbl_date.place(x=400,y=175)
-
-            en_date = CTkEntry(win_en_frame,textvariable=var_date,width=300,height=35,justify='center',fg_color='white',
-                                font=('arial',14),border_width=1,border_color='#DA7297',bg_color='#F6F5F5')
-            
-            en_date.place(x=400,y=200)
-            #en_date.insert('1',str(date))
-
-            lbl_last_school = CTkLabel(win_en_frame,text='last school',width=50,height=25,
-                                 text_color='#DA7297',font=('arial',16,'bold'),fg_color='#F6F5F5',bg_color='#F6F5F5')
-            lbl_last_school.place(x=400,y=275)
-
-            en_last_school = CTkEntry(win_en_frame,textvariable=var_lastschool,width=300,height=35,justify='center',fg_color='white',
-                                font=('arial',14),border_width=1,border_color='#DA7297',bg_color='#F6F5F5')
-            
-            en_last_school.place(x=400,y=300)
-
-            lbl_years_field = CTkLabel(win_en_frame,text='years field',width=50,height=25,
-                                 text_color='#DA7297',font=('arial',16,'bold'),fg_color='#F6F5F5',bg_color='#F6F5F5')
-            lbl_years_field.place(x=400,y=375)
-
-            en_years_field = CTkEntry(win_en_frame,textvariable=var_yearsfelid,width=300,height=35,justify='center',fg_color='white',
-                                font=('arial',14),border_width=1,border_color='#DA7297',bg_color='#F6F5F5')
-            
-            en_years_field.place(x=400,y=400)
-
-            lbl_health_problem = CTkLabel(win_en_frame,text='health problem',width=50,height=25,
-                                 text_color='#DA7297',font=('arial',16,'bold'),fg_color='#F6F5F5',bg_color='#F6F5F5')
-            lbl_health_problem.place(x=800,y=75)
-
-            en_health_problem = CTkEntry(win_en_frame,textvariable=var_healthproblem,width=300,height=35,justify='center',fg_color='white',
-                                font=('arial',14),border_width=1,border_color='#DA7297',bg_color='#F6F5F5')
-            
-            en_health_problem.place(x=800,y=100)
-
-            lbl_final_reasult= CTkLabel(win_en_frame,text='final reasult',width=50,height=25,
-                                 text_color='#DA7297',font=('arial',16,'bold'),fg_color='#F6F5F5',bg_color='#F6F5F5')
-            lbl_final_reasult.place(x=800,y=175)
-
-            en_final_reasult = CTkEntry(win_en_frame,textvariable=var_finalresult,width=300,height=35,justify='center',fg_color='white',
-                                font=('arial',14),border_width=1,border_color='#DA7297',bg_color='#F6F5F5')
-            
-            en_final_reasult.place(x=800,y=200)
-
-            add_btn = CTkButton(win_en_frame,text='ADD STUDENT INFORMATION',width=300,height=40,fg_color='#DA7297',
-                            text_color='white',bg_color='#F6F5F5',border_width=2,hover_color='#DA7297',
-                            border_color='#F6F5F5',corner_radius=10,font=("arial",16,'bold'),command=add)
-            add_btn.place(x=800,y=300)
-        
-
-        #====================== buttons ==========================
-        add_btn = CTkButton(head_frame,text='ADD',width=120,height=40,fg_color='#DA7297',
-                            text_color='white',bg_color='#F6F5F5',border_width=2,hover_color='#DA7297',
-                            border_color='#F6F5F5',corner_radius=10,font=("arial",16,'bold'),command=window_entry)
-        add_btn.place(x=100,y=565)
-        
-
-        delete_btn = CTkButton(head_frame,text='DELETE',width=120,height=40,fg_color='#DA7297',
-                            text_color='white',bg_color='#F6F5F5',border_width=2,hover_color='#DA7297',
-                            border_color='#F6F5F5',corner_radius=10,font=("arial",16,'bold'),command=delete)
-        delete_btn.place(x=250,y=565)
-
-        update_btn = CTkButton(head_frame,text='UPDATE',width=120,height=40,fg_color='#DA7297',
-                            text_color='white',bg_color='#F6F5F5',border_width=2,hover_color='#DA7297',
-                            border_color='#F6F5F5',corner_radius=10,font=("arial",16,'bold'),command=update)
-        update_btn.place(x=400,y=565)
-
-        clear_btn = CTkButton(head_frame,text='CLEAR',width=120,height=40,fg_color='#DA7297',
-                            text_color='white',bg_color='#F6F5F5',border_width=2,hover_color='#DA7297',
-                            border_color='#F6F5F5',corner_radius=10,font=("arial",16,'bold'),command=clear)
-        clear_btn.place(x=550,y=565)
-
-        img = CTkImage(Image.open('images/stu.png'),size=(40,40))
-        marks_btn = CTkButton(head_frame,text='Student Marks',image=img,width=120,height=60,fg_color='#DA7297',
-                            text_color='white',bg_color='#F6F5F5',border_width=2,hover_color='#DA7297',
-                            border_color='#F6F5F5',corner_radius=10,
-                            font=("arial",16,'bold'),command=open_first_student_marks_page)
-        marks_btn.place(x=970,y=10)
-        
-
-
-if __name__=="__main__":
+if __name__ == "__main__":
     root = Tk()
     FirstStudentClass(root)
-    root.mainloop()        
+    root.mainloop()

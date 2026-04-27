@@ -1,4 +1,3 @@
-# statisticspage.py
 from customtkinter import *
 from tkinter import *
 from tkinter import messagebox
@@ -6,167 +5,148 @@ from time import strftime
 import sqlite3
 import dashboard
 
+
 class StatisticsClass:
     def __init__(self, root):
         self.root = root
-        self.root.geometry('900x520+150+80')
+        self.root.geometry('980x570+100+60')
         self.root.title('Statistics')
         self.root.config(bg='white')
         self.root.resizable(False, False)
 
         def date():
-            date_1 = strftime('%I:%M:%S %p  -  %A  -  %d/%m/%Y')
-            date_lbl.config(text=date_1)
+            date_lbl.config(text=strftime('%I:%M:%S %p  -  %A  -  %d/%m/%Y'))
             date_lbl.after(1000, date)
 
-        # header
-        head = CTkFrame(root, width=898, height=70, fg_color='#F6F5F5', border_color='#DA7297', border_width=2)
+        # ---- head ----
+        head = CTkFrame(root, width=978, height=70, fg_color='#F6F5F5',
+                        border_color='#DA7297', border_width=2)
         head.place(x=1, y=1)
-        title = Label(head, text='Statistics', font=('Corier', 20, 'bold'), bg='#F6F5F5', fg='#DA7297')
-        title.place(x=20, y=10)
-        date_lbl = Label(head, font=('corier', 12, 'bold'), bg='#F6F5F5', fg='#DA7297')
-        date_lbl.place(x=480, y=10, width=380, height=50)
+
+        Label(head, text='Statistics', font=('courier', 20, 'bold'),
+              bg='#F6F5F5', fg='#DA7297').place(x=20, y=10)
+
+        date_lbl = Label(head, font=('courier', 12, 'bold'),
+                         bg='#F6F5F5', fg='#DA7297')
+        date_lbl.place(x=370, y=10, width=580, height=50)
         date()
 
-        # back button
         def back():
             win = Toplevel()
             dashboard.DashboardClass(win)
             root.withdraw()
             win.deiconify()
 
-        back_btn = CTkButton(head, text='←', width=70, height=64, fg_color='#DA7297',
-                             text_color='white', font=('arial', 20, 'bold'),
-                             corner_radius=0, command=back)
-        back_btn.place(x=2, y=3)
+        CTkButton(head, text='←', width=70, height=64, fg_color='#DA7297',
+                  text_color='white', font=('arial', 20, 'bold'),
+                  corner_radius=0, command=back).place(x=2, y=3)
 
-        # main frame
-        frame = CTkFrame(root, width=896, height=430, fg_color='white', border_color='#DA7297', border_width=2)
+        # ---- main frame ----
+        frame = CTkFrame(root, width=976, height=488, fg_color='white',
+                         border_color='#DA7297', border_width=2)
         frame.place(x=1, y=72)
 
-        # vars to display counts
-        self.total_students = StringVar()
-        self.total_teachers = StringVar()
-        self.total_admins = StringVar()
-        self.total_physics_marks = StringVar()
-        self.total_english_marks = StringVar()
-        self.total_accounts = StringVar()
+        # ---- counters ----
+        self.vars = {k: StringVar() for k in [
+            'students', 'teachers', 'admins', 'accounts',
+            'civic', 'arabic', 'english', 'social',
+            'math', 'chemistry', 'physics', 'biology',
+            'attendance',
+        ]}
 
-        # helper: safe count query (returns int)
-        def safe_count(conn, table_name):
+        def safe_count(conn, table):
             try:
                 cur = conn.cursor()
-                cur.execute(f"SELECT COUNT(*) FROM {table_name}")
-                return cur.fetchone()[0] or 0
+                cur.execute(f"SELECT COUNT(*) FROM {table}")
+                r = cur.fetchone()
+                return r[0] if r else 0
             except Exception:
                 return 0
 
-        # detect possible marks table names
-        def detect_table_names(conn):
-            cur = conn.cursor()
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            rows = [r[0].lower() for r in cur.fetchall()]
-            # return detected names or defaults
-            physics = None
-            english = None
-            if 'physics_marks' in rows:
-                physics = 'physics_marks'
-            elif 'islamic_marks' in rows:
-                # user earlier used islamic; treat as physics per request mapping
-                physics = 'islamic_marks'
+        def table_exists(cur, name):
+            cur.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND LOWER(name)=?",
+                (name.lower(),))
+            return bool(cur.fetchone())
 
-            if 'english_marks' in rows:
-                english = 'english_marks'
-            elif 'arabic_marks' in rows:
-                # user earlier used arabic; treat as english per mapping
-                english = 'arabic_marks'
-
-            return physics, english
-
-        def refresh_stats():
+        def refresh():
             try:
                 con = sqlite3.connect('school.db')
                 cur = con.cursor()
 
-                # Students
-                # possible table name: first_student or firststudent
-                student_tables = ['first_student', 'firststudent', 'students']
-                students_count = 0
-                for t in student_tables:
-                    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND LOWER(name)=?", (t.lower(),))
-                    if cur.fetchone():
-                        students_count = safe_count(con, t)
-                        break
+                self.vars['students'].set(
+                    str(safe_count(con, 'first_student') if table_exists(cur, 'first_student') else 0))
+                self.vars['teachers'].set(
+                    str(safe_count(con, 'teachers') if table_exists(cur, 'teachers') else 0))
+                self.vars['admins'].set(
+                    str(safe_count(con, 'Admin') if table_exists(cur, 'Admin') else 0))
+                self.vars['accounts'].set(
+                    str(safe_count(con, 'Account') if table_exists(cur, 'Account') else 0))
+                self.vars['attendance'].set(
+                    str(safe_count(con, 'attendance') if table_exists(cur, 'attendance') else 0))
 
-                # Teachers
-                teacher_tables = ['teachers', 'teacher']
-                teachers_count = 0
-                for t in teacher_tables:
-                    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND LOWER(name)=?", (t.lower(),))
-                    if cur.fetchone():
-                        teachers_count = safe_count(con, t)
-                        break
-
-                # Admins
-                admin_tables = ['admin', 'admins', 'adminpage', 'admin_table']
-                admins_count = 0
-                for t in admin_tables:
-                    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND LOWER(name)=?", (t.lower(),))
-                    if cur.fetchone():
-                        admins_count = safe_count(con, t)
-                        break
-
-                # Accounts
-                accounts_count = 0
-                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND LOWER(name)='account'")
-                if cur.fetchone():
-                    accounts_count = safe_count(con, 'Account') if safe_count(con, 'Account') else safe_count(con, 'account')
-
-                # Marks (physics / english) detection
-                physics_table, english_table = detect_table_names(con)
-                physics_count = safe_count(con, physics_table) if physics_table else 0
-                english_count = safe_count(con, english_table) if english_table else 0
-
-                # update vars
-                self.total_students.set(str(students_count))
-                self.total_teachers.set(str(teachers_count))
-                self.total_admins.set(str(admins_count))
-                self.total_accounts.set(str(accounts_count))
-                self.total_physics_marks.set(str(physics_count))
-                self.total_english_marks.set(str(english_count))
+                # جداول الدرجات — civic بدل islamic
+                marks_map = {
+                    'civic':     'civic_education_marks',
+                    'arabic':    'arabic_marks',
+                    'english':   'english_marks',
+                    'social':    'social_marks',
+                    'math':      'math_marks',
+                    'chemistry': 'chemistry_marks',
+                    'physics':   'physics_marks',
+                    'biology':   'biology_marks',
+                }
+                for key, tbl in marks_map.items():
+                    cnt = safe_count(con, tbl) if table_exists(cur, tbl) else 0
+                    self.vars[key].set(str(cnt))
 
                 con.close()
             except Exception as ex:
-                messagebox.showerror("Error", f"Failed to load statistics:\n{str(ex)}")
+                messagebox.showerror("Error", str(ex))
 
-        # layout cards
-        card_w = 260
-        card_h = 110
-        pad_x = 40
-        pad_y = 28
+        # ---- cards layout ----
+        cw, ch = 210, 95
+        gx, gy = 15, 12
 
-        def make_card(x, y, title, var, color='#DA7297'):
-            c = CTkFrame(frame, width=card_w, height=card_h, fg_color=color, corner_radius=8)
-            c.place(x=x, y=y)
-            lbl_title = Label(c, text=title, bg=color, fg='white', font=('arial', 12, 'bold'))
-            lbl_title.place(x=10, y=8)
-            lbl_value = Label(c, textvariable=var, bg=color, fg='white', font=('arial', 30, 'bold'))
-            lbl_value.place(x=10, y=35)
-            return c
+        cards = [
+            # row 1 — people
+            ('students',   'Total Students',      '#DA7297', 0, 0),
+            ('teachers',   'Total Teachers',      '#DA7297', 1, 0),
+            ('admins',     'Total Admins',        '#DA7297', 2, 0),
+            ('accounts',   'Total Accounts',      '#DA7297', 3, 0),
+            # row 2 — marks group 1
+            ('civic',      'Civic Education',     '#8B0000', 0, 1),
+            ('arabic',     'Arabic Marks',        '#8B0000', 1, 1),
+            ('english',    'English Marks',       '#8B0000', 2, 1),
+            ('social',     'Social Studies',      '#8B0000', 3, 1),
+            # row 3 — marks group 2
+            ('math',       'Mathematics',         '#c0506e', 0, 2),
+            ('chemistry',  'Chemistry',           '#c0506e', 1, 2),
+            ('physics',    'Physics',             '#c0506e', 2, 2),
+            ('biology',    'Biology',             '#c0506e', 3, 2),
+            # row 4 — attendance (wide)
+            ('attendance', 'Attendance Records',  '#555555', 0, 3),
+        ]
 
-        # top row
-        make_card(pad_x, pad_y, 'Total Students', self.total_students)
-        make_card(pad_x + card_w + 20, pad_y, 'Total Teachers', self.total_teachers)
-        make_card(pad_x + 2*(card_w + 20), pad_y, 'Total Admins', self.total_admins)
+        sx, sy = 18, 12
+        for key, title, color, col, row in cards:
+            x = sx + col * (cw + gx)
+            y = sy + row * (ch + gy)
+            # attendance card wider
+            w = cw * 2 + gx if key == 'attendance' else cw
 
-        # second row
-        make_card(pad_x, pad_y + card_h + 20, 'Physics Marks Records', self.total_physics_marks)
-        make_card(pad_x + card_w + 20, pad_y + card_h + 20, 'English Marks Records', self.total_english_marks)
-        make_card(pad_x + 2*(card_w + 20), pad_y + card_h + 20, 'Total Accounts', self.total_accounts)
+            card = Frame(frame, bg=color, bd=0, relief='flat')
+            card.place(x=x, y=y, width=w, height=ch)
 
-        # refresh button
-        refresh_btn = CTkButton(frame, text='REFRESH', width=140, height=36, fg_color='#DA7297', command=refresh_stats)
-        refresh_btn.place(x=frame.winfo_reqwidth() - 180, y=frame.winfo_reqheight() - 60)
+            Label(card, text=title, bg=color, fg='white',
+                  font=('arial', 11, 'bold')).place(x=8, y=6)
+            Label(card, textvariable=self.vars[key], bg=color, fg='white',
+                  font=('arial', 28, 'bold')).place(x=8, y=32)
 
-        # initial load
-        refresh_stats()
+        # ---- refresh button ----
+        CTkButton(frame, text='🔄  REFRESH', width=160, height=40,
+                  fg_color='#DA7297', text_color='white',
+                  font=('arial', 14, 'bold'),
+                  command=refresh).place(x=780, y=430)
+
+        refresh()

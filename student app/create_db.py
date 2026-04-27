@@ -45,9 +45,10 @@ def create_db():
             is_active      INTEGER DEFAULT 1
         )""")
 
+    # islamic_marks → civic_education_marks (Civic Education / التربية الوطنية)
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS islamic_marks(
-            i_ID         INTEGER PRIMARY KEY AUTOINCREMENT,
+        CREATE TABLE IF NOT EXISTS civic_education_marks(
+            ce_ID        INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id   INTEGER NOT NULL REFERENCES first_student(s_ID)
                          ON DELETE CASCADE ON UPDATE CASCADE,
             student_name TEXT,
@@ -132,8 +133,17 @@ def migrate_existing_db():
     add_col('Admin',         'role',           "TEXT NOT NULL DEFAULT 'admin' CHECK(role IN ('superadmin','admin','viewer'))")
     add_col('first_student', 'is_active',      'INTEGER DEFAULT 1')
     add_col('first_student', 'repeated_years', 'INTEGER DEFAULT 0')
-    add_col('islamic_marks', 'student_id',     'INTEGER')
-    add_col('islamic_marks', 'academic_year',  "TEXT DEFAULT '2024-2025'")
+    # rename islamic_marks → civic_education_marks لو لسه موجود
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='islamic_marks'")
+    if cur.fetchone():
+        cur.execute("ALTER TABLE islamic_marks RENAME TO civic_education_marks")
+        print("  ✚ islamic_marks → civic_education_marks")
+    add_col('civic_education_marks', 'student_id',    'INTEGER')
+    add_col('civic_education_marks', 'academic_year', "TEXT DEFAULT '2024-2025'")
+    add_col('arabic_marks', 'student_id',     'INTEGER')
+    add_col('arabic_marks', 'academic_year',  "TEXT DEFAULT '2024-2025'")
+    add_col('teachers', 'hire_date', 'TEXT')
+    add_col('teachers', 'is_active', 'INTEGER DEFAULT 1')
     add_col('arabic_marks',  'student_id',     'INTEGER')
     add_col('arabic_marks',  'academic_year',  "TEXT DEFAULT '2024-2025'")
     add_col('teachers',      'hire_date',      'TEXT')
