@@ -6,6 +6,7 @@ import sqlite3
 from tkinter import messagebox
 
 import statisticspage
+import curriculumpage
 import adminpage
 import studentspage
 import teacherspage
@@ -76,6 +77,12 @@ class DashboardClass():
             page()
 
         # ============================== open pages ==========================
+        def open_curriculum_page():
+            win = Toplevel()
+            curriculumpage.CurriculumClass(win)
+            root.withdraw()
+            win.deiconify()
+
         def open_admin_page():
             if not session.require("view_admin_page"):
                 return
@@ -198,6 +205,14 @@ class DashboardClass():
                 command=open_admin_page)
             admin_btn.place(x=650, y=100)
 
+            # Curriculum button
+            CTkButton(
+                home_frame, text='📚  Curriculum', width=250, height=80,
+                fg_color='#8B0000', text_color='white', bg_color='#F6F5F5',
+                font=('arial', 18, 'bold'), border_color='#8B0000',
+                hover_color='#6d0000', border_width=3, corner_radius=20,
+                command=open_curriculum_page).place(x=360, y=310)
+
             # ---- تلميح تحت الزراير المعطّلة ----
             if not session.can("view_admin_page"):
                 Label(home_frame,
@@ -225,86 +240,102 @@ class DashboardClass():
         def sta_page():
             if not session.require("view_statistics"):
                 return
+
             sta_frame = CTkFrame(page_frame, width=975, height=600,
                                  bg_color='#F6F5F5', fg_color='#F6F5F5')
             sta_frame.place(x=1, y=1)
 
-            def safe_count(conn, table_name):
+            # ---- helper ----
+            def safe_count(conn, tbl):
                 try:
-                    cur = conn.cursor()
-                    cur.execute(f"SELECT COUNT(*) FROM {table_name}")
-                    r = cur.fetchone()
+                    c = conn.cursor()
+                    c.execute(f"SELECT COUNT(*) FROM {tbl}")
+                    r = c.fetchone()
                     return r[0] if r else 0
                 except Exception:
                     return 0
 
-            def detect_table(conn, candidates):
-                cur = conn.cursor()
-                cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
-                existing = [r[0].lower() for r in cur.fetchall()]
-                for c in candidates:
-                    if c and c.lower() in existing:
-                        return c
-                return None
+            def tbl_exists(conn, name):
+                c = conn.cursor()
+                c.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND LOWER(name)=?",
+                    (name.lower(),))
+                return bool(c.fetchone())
+
+            # ---- cards definition ----
+            # (key, title, color, col, row)
+            CARDS = [
+                # row 0 — people
+                ('students',   'Total Students',    '#DA7297', 0, 0),
+                ('teachers',   'Total Teachers',    '#DA7297', 1, 0),
+                ('admins',     'Total Admins',      '#DA7297', 2, 0),
+                # row 1 — marks 1
+                ('civic',      'Civic Education',   '#8B0000', 0, 1),
+                ('arabic',     'Arabic Marks',      '#8B0000', 1, 1),
+                ('english',    'English Marks',     '#8B0000', 2, 1),
+                # row 2 — marks 2
+                ('social',     'Social Studies',    '#c0506e', 0, 2),
+                ('math',       'Mathematics',       '#c0506e', 1, 2),
+                ('chemistry',  'Chemistry',         '#c0506e', 2, 2),
+                # row 3 — marks 3 + accounts
+                ('physics',    'Physics',           '#c0506e', 0, 3),
+                ('biology',    'Biology',           '#c0506e', 1, 3),
+                ('accounts',   'Total Accounts',    '#DA7297', 2, 3),
+                # row 4 — attendance (wide)
+                ('attendance', 'Attendance Records','#555555', 0, 4),
+            ]
+
+            MARKS_TABLES = {
+                'civic':     'civic_education_marks',
+                'arabic':    'arabic_marks',
+                'english':   'english_marks',
+                'social':    'social_marks',
+                'math':      'math_marks',
+                'chemistry': 'chemistry_marks',
+                'physics':   'physics_marks',
+                'biology':   'biology_marks',
+            }
+
+            cw, ch = 300, 100
+            gx, gy = 12, 10
+            sx, sy = 15, 10
+
+            # بناء الـ labels
+            lbl_refs = {}
+            for key, title, color, col, row in CARDS:
+                x = sx + col * (cw + gx)
+                y = sy + row * (ch + gy)
+                w = cw * 2 + gx if key == 'attendance' else cw
+                card = Frame(sta_frame, bg=color, bd=0)
+                card.place(x=x, y=y, width=w, height=ch)
+                Label(card, text=title, bg=color, fg='white',
+                      font=('arial', 11, 'bold')).place(x=8, y=5)
+                val_lbl = Label(card, text='0', bg=color, fg='white',
+                                font=('goudy old style', 26, 'bold'))
+                val_lbl.place(x=8, y=30)
+                lbl_refs[key] = val_lbl
 
             def update_count():
                 try:
                     con = sqlite3.connect('school.db')
-                    students = safe_count(con, detect_table(con, ['first_student']) or 'first_student')
-                    teachers = safe_count(con, detect_table(con, ['teachers'])       or 'teachers')
-                    employees= safe_count(con, detect_table(con, ['employee','employees']) or '')
-                    admins   = safe_count(con, detect_table(con, ['admin'])           or 'Admin')
-                    accounts = safe_count(con, detect_table(con, ['account'])         or 'Account')
-                    islamic  = safe_count(con, detect_table(con, ['islamic_marks'])   or 'islamic_marks')
-                    arabic   = safe_count(con, detect_table(con, ['arabic_marks'])    or 'arabic_marks')
-                    attendance = safe_count(con, detect_table(con, ['attendance'])    or 'attendance')
+                    data = {
+                        'students':   safe_count(con, 'first_student') if tbl_exists(con, 'first_student') else 0,
+                        'teachers':   safe_count(con, 'teachers')      if tbl_exists(con, 'teachers')      else 0,
+                        'admins':     safe_count(con, 'Admin')         if tbl_exists(con, 'Admin')         else 0,
+                        'accounts':   safe_count(con, 'Account')       if tbl_exists(con, 'Account')       else 0,
+                        'attendance': safe_count(con, 'attendance')    if tbl_exists(con, 'attendance')    else 0,
+                    }
+                    for key, tbl in MARKS_TABLES.items():
+                        data[key] = safe_count(con, tbl) if tbl_exists(con, tbl) else 0
                     con.close()
-
-                    lbl_students.config(text=f"Total Students\n[ {students} ]")
-                    lbl_islamic.config(text=f"Islamic Marks\n[ {islamic} ]")
-                    lbl_arabic.config(text=f"Arabic Marks\n[ {arabic} ]")
-                    lbl_teachers.config(text=f"Total Teachers\n[ {teachers} ]")
-                    lbl_employees.config(text=f"Total Employees\n[ {employees} ]")
-                    lbl_admins.config(text=f"Total Admins\n[ {admins} ]")
-                    lbl_accounts.config(text=f"Total Accounts\n[ {accounts} ]")
-                    lbl_attendance.config(text=f"Attendance Records\n[ {attendance} ]")
+                    for key, lbl in lbl_refs.items():
+                        lbl.config(text=str(data.get(key, 0)))
                 except Exception as ex:
                     messagebox.showerror("Error", str(ex))
 
-            cw, ch, gx, gy, sx, sy = 295, 130, 20, 15, 30, 35
-            cards = []
-            for i, (var_name, default) in enumerate([
-                ("lbl_students",  "Total Students\n[ 0 ]"),
-                ("lbl_islamic",   "Islamic Marks\n[ 0 ]"),
-                ("lbl_arabic",    "Arabic Marks\n[ 0 ]"),
-                ("lbl_teachers",  "Total Teachers\n[ 0 ]"),
-                ("lbl_employees", "Total Employees\n[ 0 ]"),
-                ("lbl_admins",    "Total Admins\n[ 0 ]"),
-                ("lbl_accounts",  "Total Accounts\n[ 0 ]"),
-                ("lbl_attendance","Attendance Records\n[ 0 ]"),
-            ]):
-                row, col = divmod(i, 3)
-                x = sx + col * (cw + gx)
-                y = sy + row * (ch + gy)
-                lbl = Label(sta_frame, text=default, bd=5, relief=RIDGE,
-                            bg='#DA7297', fg='white',
-                            font=('goudy old style', 18, 'bold'))
-                lbl.place(x=x, y=y, width=cw, height=ch)
-                locals()[var_name] = lbl
-
-            # نسخ المتغيرات المحلية للـ update_count
-            lbl_students   = locals()['lbl_students']
-            lbl_islamic    = locals()['lbl_islamic']
-            lbl_arabic     = locals()['lbl_arabic']
-            lbl_teachers   = locals()['lbl_teachers']
-            lbl_employees  = locals()['lbl_employees']
-            lbl_admins     = locals()['lbl_admins']
-            lbl_accounts   = locals()['lbl_accounts']
-            lbl_attendance = locals()['lbl_attendance']
-
-            CTkButton(sta_frame, text="REFRESH", fg_color="#DA7297", width=160, height=42,
-                      text_color="white", font=("Arial", 14, "bold"),
-                      command=update_count).place(x=400, y=440)
+            CTkButton(sta_frame, text="🔄  REFRESH", fg_color="#DA7297", width=160, height=38,
+                      text_color="white", font=("Arial", 13, "bold"),
+                      command=update_count).place(x=sx + 2*(cw+gx), y=sy + 4*(ch+gy))
             update_count()
 
         # ============================== START ===============================
