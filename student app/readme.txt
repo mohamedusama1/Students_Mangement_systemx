@@ -4,7 +4,7 @@
 
 📖 Description:
 This project is a School Management System built using Python, Tkinter (CustomTkinter), and SQLite.
-It allows administrators to manage students, teachers, marks, and import/export data بسهولة.
+It allows administrators to manage students, teachers, marks, and import/export data.
 
 ---
 
